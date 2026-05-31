@@ -1,0 +1,25 @@
+name: lite
+description: Lightweight workflow for small, well-scoped C++ changes (bug fixes, small features)
+default: true
+
+artifacts:
+  brief:
+    type: brief
+    template: templates/lite/brief.md
+    output: openspec/changes/
+    requires: []
+
+  tasks:
+    type: tasks
+    template: templates/lite/tasks.md
+    output: openspec/changes/
+    requires: [brief]
+
+apply:
+  requires: [tasks]
+
+review:
+  requires: [apply]
+
+archive:
+  requires: [review]

@@ -1,0 +1,5 @@
+change: example-add-cooldown-policy
+title: "Per-(camera, forklift) alert cooldown to suppress duplicate person_near_forklift events"
+schema: lite
+status: example
+created: 2026-05-23

@@ -1,0 +1,37 @@
+name: full
+description: Full artifact workflow for cross-cutting C++ work (new pipeline stage, new inference backend, threading-model change)
+default: false
+
+artifacts:
+  proposal:
+    type: proposal
+    template: templates/full/proposal.md
+    output: openspec/changes/
+    requires: []
+
+  specs:
+    type: specs
+    template: templates/full/spec.md
+    output: openspec/changes/
+    requires: [proposal]
+
+  design:
+    type: design
+    template: templates/full/design.md
+    output: docs/design/
+    requires: [specs]
+
+  tasks:
+    type: tasks
+    template: templates/full/tasks.md
+    output: openspec/changes/
+    requires: [design]
+
+apply:
+  requires: [tasks]
+
+review:
+  requires: [apply]
+
+archive:
+  requires: [review]

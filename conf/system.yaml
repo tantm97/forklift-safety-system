@@ -1,0 +1,40 @@
+# forklift-safety-system — runtime configuration
+# All paths are relative to the working directory of the binary.
+
+backend: onnxruntime            # onnxruntime | tensorrt
+log_level: info                  # debug | info | warn | error
+inference_thread_pool_size: 0    # 0 ⇒ use std::thread::hardware_concurrency()
+
+inference:
+  model_path: models/yolov8n_forklift.onnx
+  input_width: 640
+  input_height: 640
+  conf_threshold: 0.35
+  nms_threshold:  0.45
+  max_detections: 300
+
+safety_zone:
+  mode: relative                 # relative | absolute
+  pad_ratio: 0.5                 # used when mode=relative (per side, fraction of box dim)
+  pad_x_px: 120                  # used when mode=absolute
+  pad_y_px: 120
+
+websocket:
+  host: 0.0.0.0
+  port: 8765
+  path: /ws/alerts
+
+cameras:
+  - id: dock-01
+    rtsp_url: "rtsp://user:pass@10.0.0.11:554/Streaming/Channels/101"
+    queue_capacity: 4
+    workers: 1
+    alert_cooldown_ms: 2000
+    enable_viewer: false
+
+  - id: dock-02
+    rtsp_url: "rtsp://user:pass@10.0.0.12:554/Streaming/Channels/101"
+    queue_capacity: 4
+    workers: 1
+    alert_cooldown_ms: 2000
+    enable_viewer: false

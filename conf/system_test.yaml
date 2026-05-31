@@ -1,0 +1,41 @@
+# forklift-safety-system — test configuration (video-file input)
+#
+# Use this config for local development and CI testing.
+# Before running, download the test video:
+#
+#   ./scripts/download_test_video.sh
+#
+# Then start the system with:
+#
+#   ./build/forklift_safety --config conf/system_test.yaml
+
+backend: onnxruntime
+log_level: debug
+inference_thread_pool_size: 1
+
+inference:
+  model_path: models/yolov8n_forklift.onnx
+  input_width: 640
+  input_height: 640
+  conf_threshold: 0.35
+  nms_threshold:  0.45
+  max_detections: 300
+
+safety_zone:
+  mode: relative
+  pad_ratio: 0.5
+
+websocket:
+  host: 127.0.0.1
+  port: 8765
+  path: /ws/alerts
+
+cameras:
+  - id: test-video-01
+    source_type: video_file
+    video_path: test_data/forklift_test.mp4
+    loop: true
+    queue_capacity: 4
+    workers: 1
+    alert_cooldown_ms: 2000
+    enable_viewer: true

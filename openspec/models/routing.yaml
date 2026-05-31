@@ -1,0 +1,17 @@
+# Model routing recommendations per artifact type.
+
+recommendations:
+  proposal: claude-sonnet-4.6      # Domain framing, impact analysis
+  brief:    claude-sonnet-4.6
+  specs:    gpt-5.3-codex          # Precise C++ interfaces, error contracts
+  design:   claude-sonnet-4.6      # Architecture, threading model
+  tasks:    claude-sonnet-4.6
+  apply:    gpt-5.3-codex          # C++ code generation following conventions
+  review:   claude-sonnet-4.6
+
+change_types:
+  threading:        claude-opus-4.7   # Concurrency reasoning needs the strongest model
+  inference:        gpt-5.3-codex     # ONNX/TensorRT integration, post-processing
+  performance:      claude-sonnet-4.6
+  transport:        gpt-5.3-codex     # WebSocket / JSON contracts
+  quick-fix:        claude-haiku-4.5

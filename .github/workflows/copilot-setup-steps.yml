@@ -1,0 +1,101 @@
+name: "Copilot Setup Steps"
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── C++ toolchain ─────────────────────────────────────────────────
+      - name: Install C++ toolchain & build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            clang \
+            clang-format \
+            clang-tidy \
+            pkg-config
+
+      # ── OpenCV (with FFmpeg/GStreamer for RTSP) ───────────────────────
+      - name: Install OpenCV
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            libopencv-dev \
+            libavcodec-dev \
+            libavformat-dev \
+            libswscale-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
+
+      # ── yaml-cpp ──────────────────────────────────────────────────────
+      - name: Install yaml-cpp
+        run: |
+          sudo apt-get install -y --no-install-recommends libyaml-cpp-dev
+
+      # ── ONNX Runtime ─────────────────────────────────────────────────
+      # CPU-only build sufficient for Copilot's agent environment.
+      - name: Install ONNX Runtime
+        env:
+          ORT_VERSION: "1.19.2"
+        run: |
+          cd /tmp
+          curl -fsSL \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
+            -o ort.tgz
+          tar -xzf ort.tgz
+          sudo cp -r onnxruntime-linux-x64-${ORT_VERSION}/include/* /usr/local/include/
+          sudo cp -r onnxruntime-linux-x64-${ORT_VERSION}/lib/*     /usr/local/lib/
+          sudo ldconfig
+
+      # ── Python (model export only) ────────────────────────────────────
+      - name: Set up Python for model export scripts
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python model-export dependencies
+        run: pip install --quiet ultralytics onnx onnxsim
+
+      # ── Verify build (no ORT first, then with ORT) ────────────────────
+      - name: Configure (stdlib-only smoke test)
+        run: |
+          cmake -S . -B build-smoke \
+            -DFSS_WITH_ONNXRUNTIME=OFF \
+            -DFSS_WITH_TENSORRT=OFF \
+            -DFSS_BUILD_TESTS=ON \
+            -G Ninja
+
+      - name: Build (stdlib-only smoke test)
+        run: cmake --build build-smoke -j
+
+      - name: Run tests (stdlib-only)
+        run: ctest --test-dir build-smoke --output-on-failure
+
+      - name: Configure (with ONNX Runtime)
+        run: |
+          cmake -S . -B build-ort \
+            -DFSS_WITH_ONNXRUNTIME=ON \
+            -DCMAKE_PREFIX_PATH=/usr/local \
+            -DFSS_WITH_TENSORRT=OFF \
+            -DFSS_BUILD_TESTS=ON \
+            -G Ninja
+
+      - name: Build (with ONNX Runtime)
+        run: cmake --build build-ort -j

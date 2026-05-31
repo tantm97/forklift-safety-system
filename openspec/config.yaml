@@ -1,0 +1,136 @@
+schema: spec-driven
+
+context: |
+  forklift-safety-system — a C++17 AI Box for real-time warehouse safety
+  monitoring. Detects PERSON and FORKLIFT in 8–16 RTSP streams, defines a
+  safety zone around each forklift, and emits WebSocket alerts when a person
+  enters a zone.
+
+  Tech stack:
+  - C++17, CMake 3.18+
+  - OpenCV 4.x (core, imgproc, imgcodecs, videoio, dnn)
+  - ONNX Runtime (primary) — TensorRT (optional, NVIDIA edge)
+  - yaml-cpp (config)
+  - std::thread / std::mutex / std::condition_variable
+  - clang-format + clang-tidy for static analysis
+
+  Architecture (Clean Architecture, strict layering):
+    interface       — entrypoint (src/interface/main.cpp), CLI, signals
+    application     — use cases & ports (FrameProcessingPipeline,
+                      SafetyZoneService, RiskDetectionService, InferenceEngine,
+                      VideoSource, AlertPublisher)
+    domain          — pure value types (BoundingBox, Detection, SafetyZone,
+                      Alert, ObjectClass, Frame) — zero dependencies
+    infrastructure  — adapters (RtspCameraSource, OnnxInferenceEngine,
+                      YoloV8Postprocessor, WebSocketAlertPublisher,
+                      YamlConfigLoader, Logger)
+    shared          — primitives (ThreadPool, ConcurrentQueue, Result<T>)
+
+  Pipeline (per camera):
+    RTSP → cv::VideoCapture → ConcurrentQueue<Frame, DropOldestWhenFull>
+        → ThreadPool worker → InferenceEngine → YoloV8Postprocessor
+        → RiskDetectionService → AlertPublisher
+
+  Conventions:
+  - Domain layer has ZERO third-party includes (no OpenCV, no ORT).
+  - Headers under include/forklift/<layer>/ — sources under src/<layer>/.
+  - One class per header. Filename matches the class (PascalCase header,
+    snake_case folder, ClassName.h).
+  - Public methods use camelCase only when overriding a third-party API;
+    otherwise snake_case for free functions and member functions, PascalCase
+    for types, kCamel for enum values.
+  - Use `[[nodiscard]]` on every accessor and every fallible function.
+  - Errors flow via `shared::Result<T>` at module boundaries; exceptions are
+    reserved for unrecoverable programmer mistakes.
+  - Every new pipeline stage MUST update docs/architecture/pipeline.md.
+  - Threading rules live in docs/development/conventions/threading.md
+    (read first when touching anything under shared/ or application/).
+  - Use conventional commits (`feat:`, `fix:`, `chore:`, `perf:`, `refactor:`).
+
+  Reference files:
+  - README.md
+  - src/interface/main.cpp                  (composition root)
+  - src/application/FrameProcessingPipeline.cpp (orchestration)
+  - src/application/RiskDetectionService.cpp    (canonical use case)
+
+conventions:
+  root: docs/development/conventions/
+  files:
+    - { scope: "C++ general",            applyTo: "**/*.{h,cpp}",                       file: "docs/development/conventions/cpp.md" }
+    - { scope: "Clean Architecture",     applyTo: "**/*.{h,cpp}",                       file: "docs/development/conventions/architecture.md" }
+    - { scope: "Naming",                 applyTo: "**/*.{h,cpp}",                       file: "docs/development/conventions/naming.md" }
+    - { scope: "Threading & concurrency", applyTo: "src/{shared,application,infrastructure/video}/**", file: "docs/development/conventions/threading.md" }
+    - { scope: "Error handling",         applyTo: "**/*.{h,cpp}",                       file: "docs/development/conventions/error-handling.md" }
+    - { scope: "Logging",                applyTo: "**/*.{h,cpp}",                       file: "docs/development/conventions/logging.md" }
+    - { scope: "Testing",                applyTo: "tests/**/*.{h,cpp}",                 file: "docs/development/conventions/testing.md" }
+    - { scope: "Performance",            applyTo: "src/{application,infrastructure}/**", file: "docs/development/conventions/performance.md" }
+    - { scope: "Configuration",          applyTo: "src/infrastructure/config/**",       file: "docs/development/conventions/configuration.md" }
+    - { scope: "AI / inference",         applyTo: "src/infrastructure/ai/**",           file: "docs/development/conventions/inference.md" }
+    - { scope: "Transport (WebSocket)",  applyTo: "src/infrastructure/transport/**",    file: "docs/development/conventions/transport.md" }
+  guides:
+    implementingNewFeature: docs/development/implementing-new-feature.md
+    codeReview:             docs/development/code-review.md
+    localSetup:             docs/development/local-setup.md
+
+agents:
+  file: "../AGENTS.md"
+  learningsSection: "## LEARNINGS"
+
+artifacts:
+  design: docs/design/
+  adr: docs/adr/
+
+repos:
+  forklift-safety-system:
+    path: .
+    type: edge-ai
+    openspec: openspec/
+
+dependencies: []
+dependents: []
+
+rules:
+  tasks:
+    - "Include a `clang-format` and `clang-tidy` task before review"
+    - "Include a `cmake --build build` and `ctest` task"
+    - "Include a doc-update task whenever the pipeline shape changes (docs/architecture/pipeline.md)"
+    - "Include an ADR task whenever a class is added to forklift::domain::ObjectClass or a new InferenceEngine backend is introduced"
+  testing:
+    required: true
+    rules:
+      - "Every new service in application/ MUST have a corresponding *_test.cpp in tests/application/"
+      - "Every change to a domain value type MUST keep tests in tests/domain/ passing"
+      - "Threading changes require at least one stress test in tests/integration/ (TSAN run if available)"
+    patterns:
+      - "src/application/<X>.cpp  → tests/application/<x>_test.cpp"
+      - "src/domain/<X>.cpp       → tests/domain/<x>_test.cpp"
+      - "src/infrastructure/<X>.cpp → tests/infrastructure/<x>_test.cpp"
+  codeQuality:
+    required: true
+    rules:
+      - "Run `make fmt` — all files must format cleanly"
+      - "Run `clang-tidy` over compile_commands.json — no new warnings"
+      - "Run `cmake --build build` — must succeed for the default option set"
+      - "Run `ctest --output-on-failure` — all tests pass"
+      - "If the WebSocket alert JSON shape changes, update docs/architecture/websocket-api.md AND bump the schema version field"
+    commands:
+      fmt:       "find include src tests -name '*.h' -o -name '*.cpp' | xargs clang-format -i"
+      tidy:      "run-clang-tidy -p build include src"
+      configure: "cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+      build:     "cmake --build build -j"
+      runTests:  "ctest --test-dir build --output-on-failure"
+
+branch:
+  pattern: "^(feature|hotfix|bugfix|chore|refactor|perf)/([A-Z]+-[0-9]+-)?[a-z0-9][a-z0-9-]*$"
+  types:
+    - feature
+    - hotfix
+    - bugfix
+    - chore
+    - refactor
+    - perf
+  examples:
+    - "feature/FSS-12-cooldown-policy"
+    - "perf/reduce-onnx-allocs"
+    - "refactor/split-pipeline-stages"
+    - "bugfix/rtsp-reconnect-storm"
