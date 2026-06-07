@@ -21,8 +21,11 @@
 #include <thread>
 
 #include "forklift/application/AlertPublisher.h"
+#include "forklift/application/DetectionStreamPublisher.h"
+#include "forklift/application/FrameStreamPublisher.h"
 #include "forklift/application/InferenceEngine.h"
 #include "forklift/application/RiskDetectionService.h"
+#include "forklift/application/SafetyZoneService.h"
 #include "forklift/application/VideoSource.h"
 #include "forklift/domain/Frame.h"
 #include "forklift/shared/ConcurrentQueue.h"
@@ -34,6 +37,7 @@ struct PipelineConfig {
     std::size_t              frame_queue_capacity{4};
     std::size_t              inference_workers{1};   // per camera
     std::chrono::milliseconds alert_cooldown{2000};
+    std::chrono::milliseconds max_frame_lag{500};    // warn above this processing lag
     bool                     enable_viewer{false};   // draw overlays + push viewer stream
 };
 
@@ -53,6 +57,15 @@ public:
     void stop();
     [[nodiscard]] bool running() const noexcept { return running_.load(); }
 
+    // Optional live-view wiring. When all three are supplied AND
+    // cfg.enable_viewer is true, each processed frame is published raw (no
+    // annotation) to the stream publisher and the per-frame detection data is
+    // forwarded to the detection stream publisher so the browser canvas can
+    // draw overlays. Off the safety path; safe to leave unset. Call before start().
+    void enable_viewer(std::shared_ptr<FrameStreamPublisher>     stream,
+                       std::shared_ptr<DetectionStreamPublisher> det_stream,
+                       std::shared_ptr<SafetyZoneService>        zones);
+
 private:
     void capture_loop();
     void inference_loop();
@@ -62,6 +75,10 @@ private:
     std::shared_ptr<RiskDetectionService> risk_;
     std::shared_ptr<AlertPublisher>       publisher_;
     PipelineConfig                        cfg_;
+
+    std::shared_ptr<FrameStreamPublisher>     stream_;
+    std::shared_ptr<DetectionStreamPublisher> detection_stream_;
+    std::shared_ptr<SafetyZoneService>        zone_service_;
 
     shared::ConcurrentQueue<domain::Frame> frames_;
     std::thread                            capture_thread_;

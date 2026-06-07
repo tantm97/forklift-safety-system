@@ -57,6 +57,25 @@ public:
         return v;
     }
 
+    // Pop the most recent item, discarding any older backlog as dropped. Blocks
+    // until an item is available or the queue is closed. Use this in realtime
+    // consumers (e.g. inference) where a stale frame is worthless: it guarantees
+    // the consumer always works on the freshest item and that a slow consumer
+    // can never fall progressively further behind the live source.
+    std::optional<T> pop_latest() {
+        std::unique_lock<std::mutex> lock(mu_);
+        not_empty_.wait(lock, [&] { return closed_ || !items_.empty(); });
+        if (items_.empty()) return std::nullopt;
+        while (items_.size() > 1) {
+            items_.pop_front();
+            ++dropped_;
+        }
+        T v = std::move(items_.front());
+        items_.pop_front();
+        not_full_.notify_one();
+        return v;
+    }
+
     void close() {
         {
             std::lock_guard<std::mutex> lock(mu_);

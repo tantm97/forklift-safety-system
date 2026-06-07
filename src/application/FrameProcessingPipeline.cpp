@@ -24,6 +24,15 @@ FrameProcessingPipeline::FrameProcessingPipeline(
 
 FrameProcessingPipeline::~FrameProcessingPipeline() { stop(); }
 
+void FrameProcessingPipeline::enable_viewer(
+        std::shared_ptr<FrameStreamPublisher>     stream,
+        std::shared_ptr<DetectionStreamPublisher> det_stream,
+        std::shared_ptr<SafetyZoneService>        zones) {
+    stream_           = std::move(stream);
+    detection_stream_ = std::move(det_stream);
+    zone_service_     = std::move(zones);
+}
+
 void FrameProcessingPipeline::start() {
     bool expected = false;
     if (!running_.compare_exchange_strong(expected, true)) return;
@@ -70,19 +79,50 @@ void FrameProcessingPipeline::inference_loop() {
     std::unordered_map<int, domain::Alert::TimePoint> last_alert;
 
     while (running_.load()) {
-        auto frame_opt = frames_.pop();
+        // Always pull the freshest frame, discarding any backlog. Guarantees the
+        // detector never falls progressively behind the live source — a stale
+        // frame is worthless for realtime safety alerting.
+        auto frame_opt = frames_.pop_latest();
         if (!frame_opt) return;                   // queue closed + drained
         const auto& frame = *frame_opt;
         if (frame.empty()) continue;
+
+        // Observability: warn if the frame we are about to process is already
+        // old (consumer can't keep up). The drop happens automatically above;
+        // this only surfaces sustained back-pressure.
+        const auto lag = std::chrono::duration_cast<std::chrono::milliseconds>(
+            domain::Frame::Clock::now() - frame.captured_at);
+        if (lag > cfg_.max_frame_lag) {
+            LOG_DEBUG("inference_loop: processing stale frame camera="
+                      << source_->camera_id() << " lag_ms=" << lag.count()
+                      << " seq=" << frame.sequence);
+        }
 
         auto det_result = engine_->infer(frame);
         if (!det_result) {
             LOG_WARN("inference_loop: infer failed: " << det_result.error().message);
             continue;
         }
+        const auto& detections = det_result.value();
+
+        // Optional live view: publish raw frame + detection data for browser canvas.
+        // Best-effort and only when fully wired — never blocks the safety path.
+        const bool viewing = cfg_.enable_viewer && stream_ && detection_stream_ && zone_service_;
+        if (viewing) {
+            std::vector<domain::Detection> forklifts;
+            forklifts.reserve(detections.size());
+            for (const auto& d : detections) {
+                if (d.cls == domain::ObjectClass::kForklift) forklifts.push_back(d);
+            }
+            const auto zones = zone_service_->zones_for(forklifts);
+            stream_->publish(frame);   // raw frame — browser canvas draws the boxes
+            detection_stream_->publish_detections(
+                source_->camera_id(), detections, zones,
+                frame.image.cols, frame.image.rows);
+        }
 
         const auto frame_ts = domain::Alert::Clock::now();
-        auto alerts = risk_->evaluate(source_->camera_id(), det_result.value(), frame_ts);
+        auto alerts = risk_->evaluate(source_->camera_id(), detections, frame_ts);
         for (auto& a : alerts) {
             auto it = last_alert.find(a.forklift_track_id);
             if (it != last_alert.end() &&

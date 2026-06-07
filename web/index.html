@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forklift Safety Monitor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <span class="app-title">🚜 Forklift Safety Monitor</span>
+
+    <div class="controls">
+      <label class="toggle-btn" id="btn-person">
+        <input type="checkbox" id="toggle-person" checked>
+        <span class="dot dot-person"></span>
+        <span>Person</span>
+      </label>
+      <label class="toggle-btn" id="btn-forklift">
+        <input type="checkbox" id="toggle-forklift" checked>
+        <span class="dot dot-forklift"></span>
+        <span>Forklift</span>
+      </label>
+      <label class="toggle-btn" id="btn-zone">
+        <input type="checkbox" id="toggle-zone" checked>
+        <span class="dot dot-zone"></span>
+        <span>Zone</span>
+      </label>
+    </div>
+
+    <div class="ws-indicator">
+      <div class="status-dot" id="ws-status" title="Alert server"></div>
+      <span class="ws-label" id="ws-label">connecting…</span>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <main class="camera-grid" id="camera-grid">
+      <!-- 4 cells injected by app.js -->
+    </main>
+
+    <aside class="alert-panel">
+      <div class="alert-panel-header">
+        <span>🚨 Alerts</span>
+        <button class="btn-clear" id="clear-alerts">Clear</button>
+      </div>
+      <ul class="alert-list" id="alerts"></ul>
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

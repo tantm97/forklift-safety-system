@@ -1,0 +1,231 @@
+/* style.css — Forklift Safety Monitor dashboard */
+:root {
+  --bg:          #0f172a;
+  --bg-surface:  #1e293b;
+  --bg-card:     #1a2540;
+  --border:      #334155;
+  --text:        #f1f5f9;
+  --text-muted:  #94a3b8;
+  --accent:      #3b82f6;
+  --person:      #22c55e;
+  --forklift:    #f97316;
+  --zone:        #ef4444;
+  --fps-color:   #fbbf24;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-height: 44px;
+}
+
+.app-title {
+  font-size: 1rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  user-select: none;
+  padding: 0.28rem 0.65rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.toggle-btn input { display: none; }
+.toggle-btn.on-person   { background: rgba(34,197,94,.15); border-color: var(--person);   color: var(--person); }
+.toggle-btn.on-forklift { background: rgba(249,115,22,.15); border-color: var(--forklift); color: var(--forklift); }
+.toggle-btn.on-zone     { background: rgba(239,68,68,.15);  border-color: var(--zone);     color: var(--zone); }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.dot-person   { background: var(--person); }
+.dot-forklift { background: var(--forklift); }
+.dot-zone     { background: var(--zone); }
+
+.ws-indicator {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #475569;
+  flex-shrink: 0;
+}
+.status-dot.connected    { background: var(--person); box-shadow: 0 0 5px var(--person); }
+.status-dot.disconnected { background: var(--zone); }
+.status-dot.error        { background: var(--forklift); }
+
+/* ── App body ─────────────────────────────────────────────────────────────── */
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Camera grid ─────────────────────────────────────────────────────────── */
+.camera-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 5px;
+  padding: 5px;
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+}
+
+.camera-cell {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cell-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 8px;
+  background: rgba(0,0,0,.4);
+  flex-shrink: 0;
+}
+
+.cell-id  { color: var(--text-muted); font-family: monospace; font-size: 0.68rem; }
+.cell-fps { color: var(--fps-color); font-family: monospace; font-size: 0.72rem; font-weight: 700; }
+
+.cell-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+.cell-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.cell-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.cell-offline {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+}
+
+/* ── Alert panel ─────────────────────────────────────────────────────────── */
+.alert-panel {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.alert-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.btn-clear {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.68rem;
+}
+.btn-clear:hover { background: var(--border); }
+
+.alert-list {
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.alert-item {
+  padding: 0.45rem 0.8rem;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.alert-item.flash {
+  animation: flash-in 0.4s ease;
+}
+
+@keyframes flash-in {
+  0%   { background: rgba(239,68,68,.35); }
+  100% { background: transparent; }
+}
+
+.alert-time { color: var(--text-muted); font-family: monospace; margin-right: 0.3rem; }
+.alert-cam  { color: var(--accent);     font-family: monospace; margin-right: 0.3rem; }
+.alert-msg  { color: var(--zone); }

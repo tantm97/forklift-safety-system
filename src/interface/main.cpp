@@ -19,15 +19,13 @@
 #include "forklift/application/FrameProcessingPipeline.h"
 #include "forklift/application/RiskDetectionService.h"
 #include "forklift/application/SafetyZoneService.h"
+#include "forklift/infrastructure/ai/InferenceEngineFactory.h"
 #include "forklift/infrastructure/config/YamlConfigLoader.h"
 #include "forklift/infrastructure/logging/Logger.h"
+#include "forklift/infrastructure/transport/MjpegStreamServer.h"
 #include "forklift/infrastructure/transport/WebSocketAlertPublisher.h"
 #include "forklift/infrastructure/video/RtspCameraSource.h"
 #include "forklift/infrastructure/video/VideoFileSource.h"
-
-#ifdef FSS_WITH_ONNXRUNTIME
-#include "forklift/infrastructure/ai/OnnxInferenceEngine.h"
-#endif
 
 namespace {
 
@@ -45,19 +43,16 @@ std::string find_arg(int argc, char** argv, const std::string& key, const std::s
 std::shared_ptr<forklift::application::InferenceEngine>
 make_engine(forklift::infrastructure::config::InferenceBackend backend) {
     using namespace forklift;
-    switch (backend) {
-        case infrastructure::config::InferenceBackend::kOnnxRuntime:
-#ifdef FSS_WITH_ONNXRUNTIME
-            return std::make_shared<infrastructure::ai::OnnxInferenceEngine>();
-#else
-            LOG_ERROR("requested onnxruntime backend but binary was built without it");
-            return nullptr;
-#endif
-        case infrastructure::config::InferenceBackend::kTensorRT:
-            LOG_ERROR("tensorrt backend not yet wired into composition root");
-            return nullptr;
+    namespace ai = infrastructure::ai;
+    const auto kind = backend == infrastructure::config::InferenceBackend::kTensorRT
+                          ? ai::Backend::kTensorRT
+                          : ai::Backend::kOnnxRuntime;
+    auto res = ai::make_inference_engine(kind);
+    if (!res) {
+        LOG_ERROR("inference engine unavailable: " << res.error().message);
+        return nullptr;
     }
-    return nullptr;
+    return res.value();
 }
 
 }  // namespace
@@ -92,6 +87,16 @@ int main(int argc, char** argv) {
     auto zone_service = std::make_shared<application::SafetyZoneService>(cfg.safety_zone);
     auto risk_service = std::make_shared<application::RiskDetectionService>(*zone_service);
 
+    // Optional live-view: raw MJPEG stream + SSE detection data for canvas overlay.
+    std::shared_ptr<infrastructure::transport::MjpegStreamServer> viewer;
+    if (cfg.viewer.enabled) {
+        viewer = std::make_shared<infrastructure::transport::MjpegStreamServer>(cfg.viewer);
+        if (auto r = viewer->start(); !r) {
+            LOG_ERROR("viewer start failed: " << r.error().message);
+            viewer.reset();
+        }
+    }
+
     std::vector<std::unique_ptr<application::FrameProcessingPipeline>> pipelines;
     pipelines.reserve(cfg.cameras.size());
 
@@ -110,6 +115,9 @@ int main(int argc, char** argv) {
         }
         auto pipe = std::make_unique<application::FrameProcessingPipeline>(
             source, engine, risk_service, publisher, cam.pipeline);
+        if (viewer && cam.pipeline.enable_viewer) {
+            pipe->enable_viewer(viewer, viewer, zone_service);
+        }
         pipe->start();
         pipelines.push_back(std::move(pipe));
         LOG_INFO("pipeline started camera=" << source->camera_id());
@@ -124,6 +132,7 @@ int main(int argc, char** argv) {
 
     LOG_INFO("shutdown requested — stopping pipelines");
     for (auto& p : pipelines) p->stop();
+    if (viewer) viewer->stop();
     publisher->stop();
     LOG_INFO("forklift_safety stopped cleanly");
     return 0;

@@ -6,21 +6,39 @@
 #ifndef FORKLIFT_APPLICATION_INFERENCE_ENGINE_H_
 #define FORKLIFT_APPLICATION_INFERENCE_ENGINE_H_
 
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "forklift/domain/Detection.h"
 #include "forklift/domain/Frame.h"
+#include "forklift/domain/ObjectClass.h"
 #include "forklift/shared/Result.h"
 
 namespace forklift::application {
 
+// Compute device an engine should target. Orthogonal to the backend: ONNX
+// Runtime can run on either; TensorRT always implies kCuda.
+enum class InferenceDevice { kCpu, kCuda };
+
+[[nodiscard]] constexpr const char* to_string(InferenceDevice d) noexcept {
+    return d == InferenceDevice::kCuda ? "cuda" : "cpu";
+}
+
 struct InferenceConfig {
-    std::string model_path;
-    int         input_width   {640};
-    int         input_height  {640};
-    float       conf_threshold{0.35F};
-    float       nms_threshold {0.45F};
-    int         max_detections{300};
+    std::string     model_path;
+    int             input_width   {640};
+    int             input_height  {640};
+    float           conf_threshold{0.35F};
+    float           nms_threshold {0.45F};
+    int             max_detections{300};
+    InferenceDevice device        {InferenceDevice::kCpu};
+
+    // Maps raw model class indices → domain ObjectClass. When empty, the engine
+    // falls back to a built-in default. Driven by config so a re-trained model
+    // (or a COCO stand-in mapping vehicles → forklift) can be wired without code
+    // changes. Unmapped indices are dropped as kUnknown.
+    std::unordered_map<int, domain::ObjectClass> class_map;
 };
 
 class InferenceEngine {

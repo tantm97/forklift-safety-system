@@ -33,6 +33,29 @@ shared::Result<void> OnnxInferenceEngine::initialize(const application::Inferenc
         Ort::SessionOptions opts;
         opts.SetIntraOpNumThreads(1);
         opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+        // Device selection. CUDA is only available when this binary was built
+        // against a CUDA-enabled ONNX Runtime (FSS_ORT_WITH_CUDA). When the
+        // requested device is unavailable we fall back to CPU rather than fail —
+        // the system must still run, just slower.
+        if (cfg.device == application::InferenceDevice::kCuda) {
+#ifdef FSS_ORT_WITH_CUDA
+            try {
+                OrtCUDAProviderOptions cuda_opts;  // value-initialised defaults
+                cuda_opts.device_id = 0;
+                opts.AppendExecutionProvider_CUDA(cuda_opts);
+                LOG_INFO("onnxruntime using CUDA execution provider device_id=0");
+            } catch (const Ort::Exception& e) {
+                LOG_WARN("CUDA EP unavailable (" << e.what() << ") — falling back to CPU");
+            }
+#else
+            LOG_WARN("device=cuda requested but binary built without FSS_ORT_WITH_CUDA "
+                     "— running on CPU");
+#endif
+        } else {
+            LOG_INFO("onnxruntime using CPU execution provider");
+        }
+
         impl_->session = std::make_unique<Ort::Session>(*impl_->env, cfg.model_path.c_str(), opts);
 
         Ort::AllocatorWithDefaultOptions alloc;
@@ -54,10 +77,19 @@ shared::Result<void> OnnxInferenceEngine::initialize(const application::Inferenc
         impl_->pp.conf_threshold     = cfg.conf_threshold;
         impl_->pp.nms_threshold      = cfg.nms_threshold;
         impl_->pp.max_detections     = cfg.max_detections;
-        // Default Ultralytics order: 0=person, 1=bicycle, ..., the forklift class
-        // is project-specific. Adjust via config in a follow-up change.
-        impl_->pp.class_map[0] = domain::ObjectClass::kPerson;
-        impl_->pp.class_map[1] = domain::ObjectClass::kForklift;
+
+        // Class index → domain class mapping. Prefer the config-supplied map;
+        // otherwise fall back to the default forklift-model layout: 0=person,
+        // 1=forklift. Unmapped indices are dropped as kUnknown.
+        if (!cfg.class_map.empty()) {
+            impl_->pp.class_map = cfg.class_map;
+            LOG_INFO("onnxruntime class_map from config entries="
+                     << cfg.class_map.size());
+        } else {
+            impl_->pp.class_map[0] = domain::ObjectClass::kPerson;
+            impl_->pp.class_map[1] = domain::ObjectClass::kForklift;
+            LOG_INFO("onnxruntime class_map default (0=person, 1=forklift)");
+        }
 
         LOG_INFO("onnxruntime initialized model=" << cfg.model_path);
         return {};

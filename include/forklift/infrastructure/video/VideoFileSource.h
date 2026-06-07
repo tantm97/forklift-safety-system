@@ -10,6 +10,7 @@
 #define FORKLIFT_INFRASTRUCTURE_VIDEO_VIDEO_FILE_SOURCE_H_
 
 #include <cstdint>
+#include <chrono>
 #include <string>
 
 #include <opencv2/videoio.hpp>
@@ -22,6 +23,7 @@ struct VideoFileConfig {
     std::string camera_id;
     std::string file_path;
     bool        loop{true};
+    bool        realtime_pacing{true};  // throttle to the file's native FPS
 };
 
 class VideoFileSource final : public application::VideoSource {
@@ -36,9 +38,14 @@ public:
     [[nodiscard]] const std::string&           camera_id() const override { return cfg_.camera_id; }
 
 private:
+    void pace();  // sleep so frames are emitted at the source's native cadence
+
     VideoFileConfig  cfg_;
     cv::VideoCapture cap_;
     std::uint64_t    sequence_{0};
+
+    std::chrono::milliseconds                       frame_interval_{0};
+    std::chrono::steady_clock::time_point           next_frame_at_{};
 };
 
 }  // namespace forklift::infrastructure::video

@@ -11,6 +11,7 @@
 #include "forklift/application/FrameProcessingPipeline.h"
 #include "forklift/application/InferenceEngine.h"
 #include "forklift/application/SafetyZoneService.h"
+#include "forklift/infrastructure/transport/MjpegStreamServer.h"
 #include "forklift/infrastructure/transport/WebSocketAlertPublisher.h"
 #include "forklift/infrastructure/video/RtspCameraSource.h"
 #include "forklift/infrastructure/video/VideoFileSource.h"
@@ -33,6 +34,7 @@ struct SystemConfig {
     application::InferenceConfig        inference;
     application::SafetyZoneConfig       safety_zone;
     transport::WebSocketServerConfig    websocket;
+    transport::ViewerServerConfig       viewer;
     std::vector<CameraEntry>            cameras;
     int                                 inference_thread_pool_size{0};   // 0 = auto
     std::string                         log_level{"info"};

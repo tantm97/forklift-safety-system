@@ -16,12 +16,14 @@
 1. [Overview](#1-overview)
 2. [Architecture](#2-architecture)
 3. [Setup & build](#3-setup--build)
-4. [Configuration](#4-configuration)
-5. [Development](#5-development)
-6. [Coding conventions](#6-coding-conventions)
-7. [Performance](#7-performance)
-8. [Troubleshooting](#8-troubleshooting)
-9. [License](#9-license)
+4. [Running & the dashboard](#4-running--the-dashboard)
+5. [Configuration](#5-configuration)
+6. [Deployment](#6-deployment)
+7. [Development](#7-development)
+8. [Coding conventions](#8-coding-conventions)
+9. [Performance](#9-performance)
+10. [Troubleshooting](#10-troubleshooting)
+11. [License](#11-license)
 
 ---
 
@@ -38,8 +40,9 @@ that:
   overlaps any safety zone — with per-(camera, forklift) cooldown to
   prevent alert floods
 
-It is designed for **edge deployment**: no cloud round-trip, no database,
-no per-pixel egress. The only outputs are alert JSON messages and logs.
+It is designed for **edge deployment** (e.g. Jetson Nano): no cloud round-trip,
+no database, no per-pixel egress. Outputs are alert JSON over WebSocket, an
+optional **annotated MJPEG dashboard** for operators, and logs.
 
 **Why a separate AI Box?** A dedicated edge process keeps latency tight
 (p95 ≤ 100 ms), avoids RTSP fan-out to the cloud, and isolates safety
@@ -94,6 +97,13 @@ Key decisions:
 - [ADR-0001](docs/adr/0001-clean-architecture.md) — Clean Architecture
 - [ADR-0002](docs/adr/0002-inference-backends.md) — ORT + TensorRT side-by-side
 - [ADR-0003](docs/adr/0003-frame-drop-oldest.md) — Drop-oldest queue policy
+- [ADR-0004](docs/adr/0004-mjpeg-viewer.md) — Annotated MJPEG viewer
+- [ADR-0005](docs/adr/0005-backend-device-selection.md) — Backend + device selection
+
+For extending the AI or the UI, see
+[`docs/architecture/ai-extensibility.md`](docs/architecture/ai-extensibility.md),
+[`docs/architecture/ui-streaming.md`](docs/architecture/ui-streaming.md), and the
+[production-readiness review](docs/architecture/production-readiness-review.md).
 
 ---
 
@@ -109,19 +119,20 @@ Key decisions:
 | ONNX Runtime        | ≥ 1.13        | `FSS_WITH_ONNXRUNTIME=ON`|
 | TensorRT            | ≥ 8.5         | `FSS_WITH_TENSORRT=ON`   |
 | yaml-cpp            | ≥ 0.6         | optional — falls back to a stub loader |
+| Boost (headers + system) | ≥ 1.74   | WebSocket alerts + MJPEG dashboard |
 | Python + Ultralytics| 3.9 / latest  | model export only        |
 
 #### macOS
 
 ```bash
-brew install cmake opencv onnxruntime yaml-cpp
+brew install cmake opencv onnxruntime yaml-cpp boost
 ```
 
 #### Ubuntu 22.04
 
 ```bash
 sudo apt install -y build-essential cmake pkg-config \
-                    libopencv-dev libyaml-cpp-dev
+                    libopencv-dev libyaml-cpp-dev libboost-system-dev
 # Install ONNX Runtime from https://onnxruntime.ai/
 ```
 
@@ -146,7 +157,7 @@ make fmt
 ### Get a model
 
 ```bash
-# Pretrained YOLOv8n (person only)
+# Download the YOLOv8n person/forklift model
 scripts/download_model.sh
 
 # OR export your own custom-trained model
@@ -154,60 +165,119 @@ python scripts/export_yolov8.py --weights runs/train/exp/weights/best.pt \
                                 --out models/yolov8_forklift.onnx
 ```
 
-### Run
+More: [`docs/development/local-setup.md`](docs/development/local-setup.md).
+
+---
+
+## 4. Running & the dashboard
+
+Two modes, same annotated dashboard:
 
 ```bash
+# Test — local video file (downloads model + sample video on first run)
+make run-test
+# → open http://127.0.0.1:8088/
+
+# Production-style — live RTSP camera
+make run-rtsp RTSP="rtsp://user:pass@10.0.0.11:554/Streaming/Channels/101"
+
+# Or run a hand-written config directly
 ./build/forklift_safety --config conf/system.yaml
 ```
 
-Tail alerts in another shell:
+Every run brings up two servers:
+
+| Service           | Default URL                    | What it is |
+|-------------------|--------------------------------|------------|
+| Dashboard (MJPEG) | `http://<host>:8088/`          | Live video with **person** (green), **forklift** (orange), and **safety-zone** (red) overlays, plus a live alert log |
+| Alerts (WebSocket)| `ws://<host>:8765/ws/alerts`   | Alert JSON for integrations |
+
+Tail alerts directly:
 
 ```bash
 websocat ws://localhost:8765/ws/alerts
 ```
 
-More: [`docs/development/local-setup.md`](docs/development/local-setup.md).
+The dashboard is a static `web/` bundle (no build step) that embeds the MJPEG
+stream and subscribes to the alert WebSocket. Design:
+[`docs/architecture/ui-streaming.md`](docs/architecture/ui-streaming.md) and
+[ADR-0004](docs/adr/0004-mjpeg-viewer.md).
 
 ---
 
-## 4. Configuration
+## 5. Configuration
 
-All runtime knobs live in [`conf/system.yaml`](conf/system.yaml). Schema:
+All runtime knobs live in [`conf/system.yaml`](conf/system.yaml) (RTSP) and
+[`conf/system_test.yaml`](conf/system_test.yaml) (video file). Schema:
 
 ```yaml
+backend: onnxruntime               # onnxruntime | tensorrt
+log_level: info                    # debug | info | warn | error
+inference_thread_pool_size: 0      # 0 ⇒ hardware_concurrency()
+
 inference:
-  backend: onnxruntime            # onnxruntime | tensorrt
-  model_path: models/yolov8n.onnx
-  confidence_threshold: 0.35
-  iou_threshold: 0.45
-  input_size: 640
+  model_path: models/yolov8n_forklift.onnx
+  device: cpu                      # cpu | cuda  (cuda needs FSS_ORT_WITH_CUDA + CUDA ORT)
+  input_width: 640
+  input_height: 640
+  conf_threshold: 0.35
+  nms_threshold: 0.45
+  max_detections: 300
 
 safety_zone:
-  expand_ratio: 1.5               # zone = forklift_box × expand_ratio
-  min_zone_padding_px: 40
+  mode: relative                   # relative | absolute
+  pad_ratio: 0.5                   # mode=relative: fraction of box dim per side
+  pad_x_px: 120                    # mode=absolute
+  pad_y_px: 120
 
-websocket:
+websocket:                         # alert JSON server
   host: 0.0.0.0
   port: 8765
   path: /ws/alerts
 
+viewer:                            # annotated MJPEG dashboard (web/)
+  enabled: true
+  host: 0.0.0.0
+  port: 8088
+  web_root: web
+  jpeg_quality: 75                 # 1..100
+  target_fps: 15
+
 cameras:
   - id: dock-01
-    rtsp_url: rtsp://user:pass@10.0.0.10/Streaming/Channels/101
+    rtsp_url: "rtsp://user:pass@10.0.0.11:554/Streaming/Channels/101"
+    # or, for Test mode:
+    # source_type: video_file
+    # video_path: test_data/forklift_test.mp4
+    # loop: true
     queue_capacity: 4
-    inference_workers: 1
+    workers: 1
     alert_cooldown_ms: 2000
-    max_reconnect_backoff_ms: 30000
-  - id: dock-02
-    rtsp_url: rtsp://user:pass@10.0.0.11/Streaming/Channels/101
+    enable_viewer: true            # per-camera viewer opt-in (annotation costs CPU)
 ```
 
-Full spec & validation rules:
+Backend/device selection and how to inject a new AI:
+[`docs/architecture/ai-extensibility.md`](docs/architecture/ai-extensibility.md).
+Full field spec & validation rules:
 [`docs/development/conventions/configuration.md`](docs/development/conventions/configuration.md).
 
 ---
 
-## 5. Development
+## 6. Deployment
+
+| Target                    | Command | Guide |
+|---------------------------|---------|-------|
+| Laptop — video file       | `make run-test` | [docs/deployment/laptop-testing.md](docs/deployment/laptop-testing.md) |
+| Laptop — RTSP             | `make run-rtsp RTSP=...` | [docs/deployment/laptop-testing.md](docs/deployment/laptop-testing.md#run-against-a-live-rtsp-camera) |
+| Jetson Nano — production  | `sudo ./deploy/install_jetson.sh [--cuda]` | [docs/deployment/jetson-nano.md](docs/deployment/jetson-nano.md) |
+
+The Jetson installer builds, installs into `/opt/forklift-safety`, and enables a
+**systemd service** that auto-starts on boot and restarts on failure. Overview:
+[`docs/deployment/README.md`](docs/deployment/README.md).
+
+---
+
+## 7. Development
 
 ### Daily commands
 
@@ -253,7 +323,7 @@ ctest --test-dir build --output-on-failure
 
 ---
 
-## 6. Coding conventions
+## 8. Coding conventions
 
 Short version below; full set under
 [`docs/development/conventions/`](docs/development/conventions).
@@ -274,7 +344,7 @@ Short version below; full set under
 
 ---
 
-## 7. Performance
+## 9. Performance
 
 | Metric                 | Target  |
 |------------------------|---------|
@@ -299,7 +369,7 @@ Tune in `conf/system.yaml`:
 ```yaml
 cameras:
   - queue_capacity: 4         # higher = more buffering, more latency
-    inference_workers: 1      # raise if your engine is thread-safe
+    workers: 1                # raise if your engine is thread-safe
     alert_cooldown_ms: 2000
 ```
 
@@ -308,15 +378,16 @@ Full notes:
 
 ---
 
-## 8. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom                                | Likely cause / fix                                         |
 |----------------------------------------|------------------------------------------------------------|
 | `RtspCameraSource[X]: failed to open`  | Bad URL or creds. Test with `ffprobe <rtsp_url>` first.    |
-| Many `Dropped frame, queue full` warns | Inference is undersized. Raise `inference_workers` or downgrade model (`yolov8n` instead of `yolov8s`). |
+| Many `Dropped frame, queue full` warns | Inference is undersized. Raise `workers` or downgrade model (`yolov8n` instead of `yolov8s`). |
 | No alerts despite people walking by    | Wrong class map. Confirm `0=person, 1=forklift` matches your trained model — see [`docs/development/conventions/inference.md`](docs/development/conventions/inference.md). |
 | `cmake` cannot find ONNX Runtime       | Set `-DCMAKE_PREFIX_PATH=/path/to/onnxruntime` or build with `-DFSS_WITH_ONNXRUNTIME=OFF`. |
 | WebSocket clients don't receive alerts | Confirm port is reachable; check `websocket.host` (use `0.0.0.0` for non-localhost clients). |
+| Dashboard reachable but no video       | Set `viewer.enabled: true` and the camera's `enable_viewer: true`; the dashboard is port **8088**, alerts are **8765**. |
 | Alert flood on a single incursion      | Confirm `alert_cooldown_ms` is set; default 2000 ms is per (camera, forklift_track). |
 | Process never exits on Ctrl-C          | SIGINT handler missed; send `SIGTERM`. File an issue with the stack trace from `gdb -p <pid>`. |
 | TSAN reports a data race               | Re-read [`docs/development/conventions/threading.md`](docs/development/conventions/threading.md). Almost always a mutex-less shared mutable. |
@@ -328,7 +399,7 @@ your `conf/system.yaml` (with credentials redacted), and `cmake --version`
 
 ---
 
-## 9. License
+## 11. License
 
 Apache-2.0. See `LICENSE`.
 
@@ -341,13 +412,17 @@ forklift-safety-system/
 ├── AGENTS.md                    ← read me first if you're an AI assistant
 ├── README.md                    ← you are here
 ├── CMakeLists.txt
-├── Makefile
-├── conf/system.yaml             ← runtime config
+├── Makefile                     ← run-test · run-rtsp · deploy-jetson · …
+├── conf/                        ← system.yaml (RTSP) · system_test.yaml (video)
 ├── models/                      ← ONNX artefacts
-├── scripts/                     ← export_yolov8.py · download_model.sh
+├── web/                         ← static dashboard (index.html · app.js · style.css)
+├── scripts/                     ← setup_test · run_test · run_rtsp · download_model · export_yolov8
+├── deploy/                      ← install_jetson.sh · forklift-safety.service (systemd)
 ├── docs/
-│   ├── adr/                     ← ADR-0001 … 0003
+│   ├── adr/                     ← ADR-0001 … 0005
 │   ├── architecture/            ← architecture · pipeline · threading · websocket-api
+│   │                              · ai-extensibility · ui-streaming · production-readiness-review
+│   ├── deployment/              ← README · jetson-nano · laptop-testing
 │   └── development/
 │       ├── conventions/         ← cpp · naming · threading · error-handling · …
 │       ├── local-setup.md

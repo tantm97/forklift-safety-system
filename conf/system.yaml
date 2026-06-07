@@ -7,11 +7,17 @@ inference_thread_pool_size: 0    # 0 ⇒ use std::thread::hardware_concurrency()
 
 inference:
   model_path: models/yolov8n_forklift.onnx
+  device: cpu                    # cpu | cuda  (cuda needs a CUDA-enabled ORT / Jetson)
   input_width: 640
   input_height: 640
   conf_threshold: 0.35
   nms_threshold:  0.45
   max_detections: 300
+  # Class-index → domain-class map. Default forklift model layout: person=0,
+  # forklift=1. Set these to match your trained model's class order.
+  classes:
+    person:   [0]
+    forklift: [1]
 
 safety_zone:
   mode: relative                 # relative | absolute
@@ -24,13 +30,21 @@ websocket:
   port: 8765
   path: /ws/alerts
 
+viewer:                          # annotated MJPEG dashboard (see web/)
+  enabled: true
+  host: 0.0.0.0
+  port: 8088
+  web_root: web
+  jpeg_quality: 75
+  target_fps: 15
+
 cameras:
   - id: dock-01
     rtsp_url: "rtsp://user:pass@10.0.0.11:554/Streaming/Channels/101"
     queue_capacity: 4
     workers: 1
     alert_cooldown_ms: 2000
-    enable_viewer: false
+    enable_viewer: true
 
   - id: dock-02
     rtsp_url: "rtsp://user:pass@10.0.0.12:554/Streaming/Channels/101"

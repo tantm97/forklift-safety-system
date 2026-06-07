@@ -14,6 +14,7 @@ endif()
 # ─── Options ──────────────────────────────────────────────────────────────────
 option(FSS_WITH_ONNXRUNTIME  "Build with ONNX Runtime inference backend" ON)
 option(FSS_WITH_TENSORRT     "Build with TensorRT inference backend"     OFF)
+option(FSS_ORT_WITH_CUDA     "ONNX Runtime has the CUDA execution provider" OFF)
 option(FSS_BUILD_TESTS       "Build unit tests"                          ON)
 option(FSS_WARN_AS_ERROR     "Treat warnings as errors"                  OFF)
 option(FSS_WITH_BOOST_BEAST  "Build real WebSocket server (Boost.Beast)" ON)
@@ -81,7 +82,10 @@ add_library(forklift_core STATIC
     src/infrastructure/video/RtspCameraSource.cpp
     src/infrastructure/video/VideoFileSource.cpp
     src/infrastructure/ai/YoloV8Postprocessor.cpp
+    src/infrastructure/ai/InferenceEngineFactory.cpp
+    src/infrastructure/render/OverlayFrameAnnotator.cpp
     src/infrastructure/transport/WebSocketAlertPublisher.cpp
+    src/infrastructure/transport/MjpegStreamServer.cpp
     src/infrastructure/config/YamlConfigLoader.cpp
     src/infrastructure/logging/Logger.cpp
     src/shared/ThreadPool.cpp
@@ -114,6 +118,9 @@ if(FSS_WITH_ONNXRUNTIME)
     target_include_directories(forklift_core PUBLIC ${ONNXRUNTIME_INCLUDE_DIR})
     target_link_libraries(forklift_core PUBLIC ${ONNXRUNTIME_LIB})
     target_compile_definitions(forklift_core PUBLIC FSS_WITH_ONNXRUNTIME=1)
+    if(FSS_ORT_WITH_CUDA)
+        target_compile_definitions(forklift_core PUBLIC FSS_ORT_WITH_CUDA=1)
+    endif()
 endif()
 
 if(FSS_WITH_TENSORRT)

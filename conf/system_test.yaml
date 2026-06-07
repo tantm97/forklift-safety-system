@@ -1,13 +1,15 @@
-# forklift-safety-system — test configuration (video-file input)
+# forklift-safety-system — test configuration (video-file input, 4 cameras)
 #
-# Use this config for local development and CI testing.
-# Before running, download the test video:
+# Before running, download the test videos:
 #
-#   ./scripts/download_test_video.sh
+#   ./scripts/setup_test.sh
 #
-# Then start the system with:
+# Then start the system:
 #
 #   ./build/forklift_safety --config conf/system_test.yaml
+#
+# Dashboard:  http://127.0.0.1:8088
+# Alerts WS:  websocat ws://127.0.0.1:8765/ws/alerts
 
 backend: onnxruntime
 log_level: debug
@@ -15,11 +17,17 @@ inference_thread_pool_size: 1
 
 inference:
   model_path: models/yolov8n_forklift.onnx
+  device: cpu               # cpu | cuda
   input_width: 640
   input_height: 640
   conf_threshold: 0.35
   nms_threshold:  0.45
   max_detections: 300
+  # Class-index → domain-class map. Default forklift model layout: person=0,
+  # forklift=1. Adjust the indices to match your trained model's class order.
+  classes:
+    person:   [0]
+    forklift: [1]
 
 safety_zone:
   mode: relative
@@ -30,10 +38,45 @@ websocket:
   port: 8765
   path: /ws/alerts
 
+viewer:
+  enabled: true
+  host: 127.0.0.1
+  port: 8088
+  web_root: web
+  jpeg_quality: 75
+  target_fps: 15
+
 cameras:
-  - id: test-video-01
+  - id: cam-01
     source_type: video_file
-    video_path: test_data/forklift_test.mp4
+    video_path: test_data/forklift_01.mp4
+    loop: true
+    queue_capacity: 4
+    workers: 1
+    alert_cooldown_ms: 2000
+    enable_viewer: true
+
+  - id: cam-02
+    source_type: video_file
+    video_path: test_data/02_keeping_workers_safe_forklifts.mp4
+    loop: true
+    queue_capacity: 4
+    workers: 1
+    alert_cooldown_ms: 2000
+    enable_viewer: true
+
+  - id: cam-03
+    source_type: video_file
+    video_path: test_data/forklift_warehouse_test.mp4
+    loop: true
+    queue_capacity: 4
+    workers: 1
+    alert_cooldown_ms: 2000
+    enable_viewer: true
+
+  - id: cam-04
+    source_type: video_file
+    video_path: test_data/05_forklift_safety_operator.mp4
     loop: true
     queue_capacity: 4
     workers: 1

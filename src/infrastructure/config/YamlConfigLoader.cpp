@@ -30,6 +30,11 @@ application::SafetyZoneConfig::Mode parse_zone_mode(const std::string& s) {
     return application::SafetyZoneConfig::Mode::kRelativeToBox;
 }
 
+application::InferenceDevice parse_device(const std::string& s) {
+    if (s == "cuda" || s == "gpu") return application::InferenceDevice::kCuda;
+    return application::InferenceDevice::kCpu;
+}
+
 #endif
 
 }  // namespace
@@ -55,6 +60,28 @@ shared::Result<SystemConfig> load_from_yaml(const std::string& path) {
             out.inference.conf_threshold = get_or<float>(inf, "conf_threshold", 0.35F);
             out.inference.nms_threshold  = get_or<float>(inf, "nms_threshold", 0.45F);
             out.inference.max_detections = get_or<int>(inf, "max_detections", 300);
+            // Device may be set under inference.device, or at the top level as a
+            // convenience. Defaults to cpu so the system runs everywhere.
+            out.inference.device = parse_device(
+                get_or<std::string>(inf, "device",
+                    get_or<std::string>(root, "device", "cpu")));
+
+            // Optional class map. Form:
+            //   classes:
+            //     person:   [0]
+            //     forklift: [2, 7]   # COCO car + truck stand-in for forklift
+            // Empty/absent → engine uses its built-in default.
+            if (auto classes = inf["classes"]) {
+                auto add = [&](const char* key, domain::ObjectClass cls) {
+                    if (auto node = classes[key]) {
+                        for (const auto& idx : node) {
+                            out.inference.class_map[idx.as<int>()] = cls;
+                        }
+                    }
+                };
+                add("person",   domain::ObjectClass::kPerson);
+                add("forklift", domain::ObjectClass::kForklift);
+            }
         }
 
         if (auto sz = root["safety_zone"]) {
@@ -69,6 +96,15 @@ shared::Result<SystemConfig> load_from_yaml(const std::string& path) {
             out.websocket.host = get_or<std::string>(ws, "host", "0.0.0.0");
             out.websocket.port = static_cast<std::uint16_t>(get_or<int>(ws, "port", 8765));
             out.websocket.path = get_or<std::string>(ws, "path", "/ws/alerts");
+        }
+
+        if (auto v = root["viewer"]) {
+            out.viewer.enabled      = get_or<bool>(v, "enabled", false);
+            out.viewer.host         = get_or<std::string>(v, "host", "0.0.0.0");
+            out.viewer.port         = static_cast<std::uint16_t>(get_or<int>(v, "port", 8088));
+            out.viewer.web_root     = get_or<std::string>(v, "web_root", "web");
+            out.viewer.jpeg_quality = get_or<int>(v, "jpeg_quality", 75);
+            out.viewer.target_fps   = get_or<int>(v, "target_fps", 15);
         }
 
         if (auto cams = root["cameras"]) {

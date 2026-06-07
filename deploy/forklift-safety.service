@@ -1,0 +1,35 @@
+# systemd unit for forklift-safety-system.
+#
+# Installed to /etc/systemd/system/forklift-safety.service by
+# deploy/install_jetson.sh. The service runs the edge detector on boot and
+# restarts it on failure.
+#
+# Paths assume the install layout created by the installer:
+#   /opt/forklift-safety/forklift_safety   (binary)
+#   /opt/forklift-safety/conf/system.yaml  (config)
+#   /opt/forklift-safety/{web,models}/     (assets + model)
+
+[Unit]
+Description=Forklift Safety System (edge person/forklift detector)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=forklift
+Group=forklift
+WorkingDirectory=/opt/forklift-safety
+ExecStart=/opt/forklift-safety/forklift_safety --config /opt/forklift-safety/conf/system.yaml
+Restart=on-failure
+RestartSec=5
+# Give the GPU/driver a moment after boot before retrying.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Hardening (relaxed enough for CUDA/V4L access on Jetson).
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

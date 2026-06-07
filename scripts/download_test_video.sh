@@ -14,7 +14,7 @@ set -euo pipefail
 DEST="${DEST:-test_data/forklift_test.mp4}"
 
 # 90-second forklift+worker warehouse clip (640x360, ~5 MB).
-YOUTUBE_URL="https://www.youtube.com/watch?v=9eqze5JWNjY"
+YOUTUBE_URL="https://www.youtube.com/watch?v=14UhAiWiMq0"
 
 # Reliable fallback: generic sample MP4 (no forklift — pipeline smoke-test only).
 FALLBACK_URL="https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4"

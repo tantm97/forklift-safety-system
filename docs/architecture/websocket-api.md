@@ -1,5 +1,9 @@
 # WebSocket Alert API
 
+> This is the **alert JSON** channel. For the live annotated video dashboard
+> (a separate server on port 8088), see
+> [`ui-streaming.md`](ui-streaming.md).
+
 ## Endpoint
 
 ```
